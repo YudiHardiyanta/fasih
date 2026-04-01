@@ -2,6 +2,7 @@ const puppeteer = require("puppeteer");
 const survey_id = "2395b67d-d1af-4739-9ef8-c0cc0aa9ce9a";
 const Level2 = require("./models/Level2");
 const Level3 = require("./models/Level3");
+const Level4 = require("./models/Level4");
 const ppl = require("./models/ppl");
 const Assignment = require("./models/assignment");
 const sequelize = require("./database");
@@ -35,7 +36,7 @@ async function crawl(survey_id) {
         waitUntil: "networkidle2"
     });
     const params = {
-        region1Id: "19757e36-9954-4271-996f-aac31c6f7133",
+        region1Id: "92f3f2ce-8e70-44b0-bc02-b172e9671000",
         region2Id: "",
         region3Id: "",
         fullcode3: "",
@@ -45,7 +46,7 @@ async function crawl(survey_id) {
     console.log('download level 2')
     const data2 = await page.evaluate(async (params) => {
         const res = await fetch(
-            "https://fasih-sm.bps.go.id/region/api/v1/region/level2?groupId=d18bcaa1-17f1-40cc-9c49-19537d40c4eb&level1FullCode=55",
+            "https://fasih-sm.bps.go.id/region/api/v1/region/level2?groupId=7381fdcf-255d-47a7-b791-cebe05689e60&level1FullCode=51",
             {
                 method: "GET",
                 credentials: "include",
@@ -69,7 +70,7 @@ async function crawl(survey_id) {
         console.log('download level 3')
         const data3 = await page.evaluate(async (params) => {
             const res = await fetch(
-                `https://fasih-sm.bps.go.id/region/api/v1/region/level3?groupId=d18bcaa1-17f1-40cc-9c49-19537d40c4eb&level2Id=${params['region2Id']}`,
+                `https://fasih-sm.bps.go.id/region/api/v1/region/level3?groupId=7381fdcf-255d-47a7-b791-cebe05689e60&level2Id=${params['region2Id']}`,
                 {
                     method: "GET",
                     credentials: "include",
@@ -93,7 +94,7 @@ async function crawl(survey_id) {
             console.log('download level 4')
             const data4 = await page.evaluate(async (params) => {
                 const res = await fetch(
-                    `https://fasih-sm.bps.go.id/survey/api/v1/survey-period-role-users/region?surveyPeriodId=16acea4e-4710-43d1-8b00-eeee589c8b66&surveyRoleId=34daa2b9-0ee3-4a52-97ef-2b6d00dbac93&regionCode=${params['fullcode3']}`,
+                    `https://fasih-sm.bps.go.id/region/api/v1/region/level4?groupId=7381fdcf-255d-47a7-b791-cebe05689e60&level3Id=${params['region3Id']}`,
                     {
                         method: "GET",
                         credentials: "include",
@@ -106,22 +107,16 @@ async function crawl(survey_id) {
             }, params);
 
             for (const item4 of data4.data) {
-                await ppl.upsert({
+                await Level4.upsert({
                     id: item4.id,
-                    userId: item4.userId,
-                    surveyRoleId: item4.surveyRoleId,
-                    surveyPeriodId: item4.surveyPeriodId,
-                    regionId: item4.regionId,
-                    createdAt: item4.createdAt,
-                    updatedAt: item4.updatedAt,
-                    username: item4.username,
-                    fullname: item4.fullname,
-                    sequence: item4.sequence,
-                    description: item4.description,
-                    surveyRoleGroupId: item4.surveyRoleGroupId,
-                    smallestAreaOrder: item4.smallestAreaOrder,
-                    isPencacah: item4.isPencacah
+                    fullCode: item4.fullCode,
+                    code: item4.code,
+                    name: item4.name,
                 });
+                params['region4Id'] = item4.id
+                params['fullcode4'] = item4.fullCode
+                console.log('download level 5')
+                
 
                 //download assignment
                 const body = {
@@ -145,7 +140,7 @@ async function crawl(survey_id) {
                         region1Id: params['region1Id'],
                         region2Id: params['region2Id'],
                         region3Id: params['region3Id'],
-                        region4Id: null,
+                        region4Id: params['region4Id'],
                         region5Id: null,
                         region6Id: null,
                         region7Id: null,
@@ -153,7 +148,7 @@ async function crawl(survey_id) {
                         region9Id: null,
                         region10Id: null,
 
-                        surveyPeriodId: "16acea4e-4710-43d1-8b00-eeee589c8b66",
+                        surveyPeriodId: "39136966-8f3c-4a0c-915b-0f65eb223475",
 
                         assignmentErrorStatusType: -1,
                         assignmentStatusAlias: null,
@@ -170,7 +165,7 @@ async function crawl(survey_id) {
                         data10: null,
 
                         userIdResponsibility: null,
-                        currentUserId: item4.userId,
+                        currentUserId: null,
 
                         regionId: null,
                     }
