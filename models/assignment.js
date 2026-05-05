@@ -3,10 +3,6 @@ const sequelize = require("../database");
 
 const Assignment = sequelize.define("Assignment", {
 
-    loop_id: {
-        type: DataTypes.UUID,
-    },
-    
     id: {
         type: DataTypes.UUID,
         primaryKey: true

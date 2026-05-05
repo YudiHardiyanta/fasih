@@ -1,16 +1,14 @@
 const puppeteer = require("puppeteer");
+const Survey = require("./models/survey");
 const RegionGroup = require("./models/regionGroup");
-const Level1 = require("./models/Level1");
-const Level2 = require("./models/Level2");
-const Level3 = require("./models/Level3");
-const Level4 = require("./models/Level4");
-const Level5 = require("./models/Level5");
-const Level6 = require("./models/Level6");
+const RegionJoin = require('./models/regionJoin');
+const Assignment = require("./models/assignment");
 const sequelize = require("./database");
+const fs = require('fs');
+const path = require('path');
+
 
 require("dotenv").config();
-
-const MAX_CONCURRENT = 3; // aman untuk puppeteer
 
 async function crawl() {
     await sequelize.authenticate();
@@ -18,7 +16,6 @@ async function crawl() {
     await sequelize.sync();
 
     const browser = await puppeteer.launch({ headless: false });
-
     const page = await browser.newPage();
 
     // 🔐 LOGIN
@@ -31,67 +28,87 @@ async function crawl() {
     await page.click("#kc-login");
     await page.waitForNavigation();
 
+
     const region = await RegionGroup.findOne();
+    const survey = await Survey.findOne();
+    let survey_periode_id = survey.surveyPeriods[0].id;
+    if (process.env.SURVEY_PERIOD_ID) {
+        survey_periode_id = process.env.SURVEY_PERIOD_ID;
+    }
     const level = parseInt(process.env.LOOP_LEVEL || region.levelCount);
+    // 🔥 ambil tasks
 
-    console.log("download level " + level);
+    const sql = fs.readFileSync(
+        path.join(__dirname, 'region_join.sql'),
+        'utf-8'
+    );
 
-    // 🔥 ambil tasks berdasarkan level
-    let tasks = [];
-    if (level === 1) tasks = await Level1.findAll({ raw: true });
-    if (level === 2) tasks = await Level2.findAll({ raw: true });
-    if (level === 3) tasks = await Level3.findAll({ raw: true });
-    if (level === 4) tasks = await Level4.findAll({ raw: true });
-    if (level === 5) tasks = await Level5.findAll({ raw: true });
-    if (level === 6) tasks = await Level6.findAll({ raw: true });
-
-    console.log("Total task:", tasks.length);
-
-    // ambil token
+    const [tasks] = await sequelize.query(sql);
+    // ambil XSRF token
     const cookies = await page.cookies();
     const xsrfCookie = cookies.find(c => c.name === "XSRF-TOKEN");
     const xsrfToken = xsrfCookie ? decodeURIComponent(xsrfCookie.value) : null;
+    const cliProgress = require('cli-progress');
 
-    // queue system
-    await runQueue(tasks, async (task) => {
-        return await processTask(browser, task, level, xsrfToken);
-    }, MAX_CONCURRENT);
+    const bar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
 
-    await browser.close();
-}
+    const total = tasks.length;
+    bar.start(total, 0);
 
-async function processTask(browser, task, level, xsrfToken) {
+    // loop
+    for (const task of tasks) {
+        const body = {
+            draw: 2,
+            columns: [
+                { data: "id", name: "", searchable: true, orderable: false, search: { value: "", regex: false } },
+                { data: "codeIdentity", name: "", searchable: true, orderable: false, search: { value: "", regex: false } },
+                { data: "data1", name: "", searchable: true, orderable: true, search: { value: "", regex: false } },
+                { data: "data2", name: "", searchable: true, orderable: true, search: { value: "", regex: false } },
+                { data: "data3", name: "", searchable: true, orderable: true, search: { value: "", regex: false } },
+                { data: "data4", name: "", searchable: true, orderable: true, search: { value: "", regex: false } },
+                { data: "data6", name: "", searchable: true, orderable: true, search: { value: "", regex: false } }
+            ],
 
-    const page = await browser.newPage(); // 🔥 isolate page
+            order: [{ column: 0, dir: "asc" }],
+            start: 0,
+            length: 1000,
+            search: { value: "", regex: false },
 
-    console.log("Start:", task.id);
+            assignmentExtraParam: {
+                region1Id: task['region1Id'],
+                region2Id: task['region2Id'],
+                region3Id: task['region3Id'],
+                region4Id: task['region4Id'],
+                region5Id: task['region5Id'],
+                region6Id: task['region6Id'],
+                region7Id: null,
+                region8Id: null,
+                region9Id: null,
+                region10Id: null,
 
-    // 🔥 clone body
-    const body = {
-        draw: 1,
-        columns: [],
-        order: [{ column: 0, dir: "asc" }],
-        start: 0,
-        length: 1000,
-        search: { value: "", regex: false },
-        assignmentExtraParam: {
-            region1Id: null,
-            region2Id: null,
-            region3Id: null,
-            region4Id: null,
-            region5Id: null,
-            region6Id: null,
-            surveyPeriodId: process.env.SURVEY_PERIOD_ID || null,
-        }
-    };
+                surveyPeriodId: survey_periode_id,
 
-    // 🔥 set regionId dinamis
-    const key = `region${level}Id`;
-    body.assignmentExtraParam[key] = task.id;
+                assignmentErrorStatusType: -1,
+                assignmentStatusAlias: null,
 
-    const result = await page.evaluate(
-        async ({ xsrfToken, body }) => {
+                data1: null,
+                data2: null,
+                data3: null,
+                data4: null,
+                data5: null,
+                data6: null,
+                data7: null,
+                data8: null,
+                data9: null,
+                data10: null,
 
+                userIdResponsibility: null,
+                currentUserId: null,
+
+                regionId: null,
+            }
+        };
+        const result = await page.evaluate(async (xsrfToken, body) => {
             const res = await fetch(
                 "https://fasih-sm.bps.go.id/analytic/api/v2/assignment/datatable-all-user-survey-periode",
                 {
@@ -107,51 +124,18 @@ async function processTask(browser, task, level, xsrfToken) {
             );
 
             return await res.json();
-        },
-        { xsrfToken, body }
-    );
-    result.data.forEach(item => {
-        item.loop_id = task.id;
-    });
+        }, xsrfToken, body);
 
-    await Assignment.bulkCreate(result.data, {
-        updateOnDuplicate: [
-            "id",
-        ]
-    });
-    
-    console.log("Done:", task.id, result?.data?.length || 0);
-
-    await page.close();
-}
-
-// 🔥 QUEUE ENGINE
-async function runQueue(tasks, workerFn, max = 3) {
-    let index = 0;
-    let active = 0;
-
-    return new Promise((resolve) => {
-
-        function next() {
-            if (index >= tasks.length && active === 0) {
-                return resolve();
-            }
-
-            while (active < max && index < tasks.length) {
-                const task = tasks[index++];
-                active++;
-
-                workerFn(task)
-                    .catch(err => console.error(err))
-                    .finally(() => {
-                        active--;
-                        next();
-                    });
-            }
-        }
-
-        next();
-    });
+        await Assignment.bulkCreate(result.searchData, {
+            updateOnDuplicate: [
+                "id",
+            ]
+        });
+        bar.increment();
+    }
+    bar.stop();
+    console.log("Selesai download semua level");
+    await browser.close();
 }
 
 crawl();
