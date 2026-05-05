@@ -15,7 +15,7 @@ const Level3 = sequelize.define("Level3", {
   code: DataTypes.STRING
 
 }, {
-  tableName: "level_3",
+  tableName: "level_3_ngibar",
   timestamps: false
 });
 

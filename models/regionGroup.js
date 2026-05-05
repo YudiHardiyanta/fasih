@@ -58,7 +58,7 @@ const RegionGroup = sequelize.define("RegionGroup", {
     }
 
 }, {
-    tableName: "region_groups",
+    tableName: "region_groups_ngibar",
 });
 
 module.exports = RegionGroup;

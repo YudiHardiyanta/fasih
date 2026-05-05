@@ -189,7 +189,7 @@ const Assignment = sequelize.define("Assignment", {
     }
 
 }, {
-    tableName: "assignments",
+    tableName: "assignments_ngibar",
     timestamps: false
 });
 

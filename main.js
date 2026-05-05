@@ -68,7 +68,7 @@ async function crawl() {
 
     const total = tasks.length;
     bar.start(total, 0);
-    const [last_data] = await sequelize.query(`select '${survey_periode_id}' as id,max(dateModified) as dateModified from assignments`);
+    const [last_data] = await sequelize.query(`select '${survey_periode_id}' as id,max(dateModified) as dateModified from assignments_ngibar`);
     await Last.bulkCreate(last_data, {
         updateOnDuplicate: ["dateModified"]
     });

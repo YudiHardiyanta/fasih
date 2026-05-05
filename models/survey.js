@@ -134,7 +134,7 @@ const Survey = sequelize.define("Survey", {
     }
 
   }, {
-    tableName: "surveys",
+    tableName: "surveys_ngibar",
   });
 
 

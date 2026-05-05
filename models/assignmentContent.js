@@ -19,7 +19,7 @@ const AssignmentContent = sequelize.define("AssignmentContent", {
   },
 
 }, {
-  tableName: "assignment_content",
+  tableName: "assignment_content_ngibar",
   timestamps: false
 });
 

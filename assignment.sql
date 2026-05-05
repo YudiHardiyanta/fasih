@@ -1,5 +1,5 @@
 SELECT 
 id 
 from 
-assignments 
-where assignmentStatusId > 0
+assignments_ngibar 
+where (assignmentStatusId > 0 or assignmentStatusAlias = 'DRAFT')

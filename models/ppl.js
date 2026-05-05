@@ -62,7 +62,7 @@ const ppl = sequelize.define("ppl", {
 
 
 }, {
-  tableName: "ppl",
+  tableName: "ppl_ngibar",
   timestamps: false
 });
 

@@ -11,7 +11,7 @@ const Last = sequelize.define("Last", {
   dateModified: DataTypes.DATE,
 
 }, {
-  tableName: "last_data",
+  tableName: "last_data_ngibar",
   timestamps: false
 });
 
