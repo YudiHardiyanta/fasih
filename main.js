@@ -1,7 +1,6 @@
 const puppeteer = require("puppeteer");
 const Survey = require("./models/survey");
 const RegionGroup = require("./models/regionGroup");
-const RegionJoin = require('./models/regionJoin');
 const Assignment = require("./models/assignment");
 const sequelize = require("./database");
 const fs = require('fs');
@@ -125,12 +124,14 @@ async function crawl() {
 
             return await res.json();
         }, xsrfToken, body);
+        const updateFields = Object.keys(Assignment.rawAttributes)
+            .filter(field => field !== 'id'); // exclude primary key
+        if (result.searchData) {
+            await Assignment.bulkCreate(result.searchData, {
+                updateOnDuplicate: updateFields
+            });
+        }
 
-        await Assignment.bulkCreate(result.searchData, {
-            updateOnDuplicate: [
-                "id",
-            ]
-        });
         bar.increment();
     }
     bar.stop();
