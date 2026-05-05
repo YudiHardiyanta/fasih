@@ -2,6 +2,7 @@ const puppeteer = require("puppeteer");
 const Survey = require("./models/survey");
 const RegionGroup = require("./models/regionGroup");
 const Assignment = require("./models/assignment");
+const Last = require("./models/Last");
 const sequelize = require("./database");
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +14,6 @@ async function crawl() {
     await sequelize.authenticate();
     console.log("Database connected");
     await sequelize.sync();
-
     const browser = await puppeteer.launch({ headless: false });
     const page = await browser.newPage();
 
@@ -37,11 +37,26 @@ async function crawl() {
     const level = parseInt(process.env.LOOP_LEVEL || region.levelCount);
     // 🔥 ambil tasks
 
-    const sql = fs.readFileSync(
+    let sql = fs.readFileSync(
         path.join(__dirname, 'region_join.sql'),
         'utf-8'
     );
+    let offset = 0;
 
+    try {
+        const index_main = fs.readFileSync(
+            path.join(__dirname, 'index_main.txt'),
+            'utf-8'
+        );
+
+        offset = parseInt(index_main.trim(), 10);
+        if (isNaN(offset)) offset = 0;
+
+    } catch (e) {
+        offset = 0;
+    }
+
+    sql = sql + ` OFFSET ${offset}`;
     const [tasks] = await sequelize.query(sql);
     // ambil XSRF token
     const cookies = await page.cookies();
@@ -53,7 +68,10 @@ async function crawl() {
 
     const total = tasks.length;
     bar.start(total, 0);
-
+    const [last_data] = await sequelize.query(`select '${survey_periode_id}' as id,max(dateModified) as dateModified from assignments`);
+    await Last.bulkCreate(last_data, {
+        updateOnDuplicate: ["dateModified"]
+    });
     // loop
     for (const task of tasks) {
         const body = {
@@ -133,9 +151,14 @@ async function crawl() {
         }
 
         bar.increment();
+        fs.writeFileSync('index_main.txt', (offset+bar.value).toString());
     }
     bar.stop();
     console.log("Selesai download semua level");
+    // update last_data
+    if (fs.existsSync('index_main.txt')) {
+        fs.unlinkSync('index_main.txt');
+    }
     await browser.close();
 }
 
