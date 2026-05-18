@@ -41,43 +41,43 @@ const Assignment = sequelize.define("Assignment", {
     },
 
     data1: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data2: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data3: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data4: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data5: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data6: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data7: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data8: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data9: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     data10: {
-        type: DataTypes.STRING
+        type: DataTypes.STRING.STRING(500)
     },
 
     dateCreated: {
