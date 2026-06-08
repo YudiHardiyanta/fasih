@@ -61,6 +61,24 @@ function toUInt8(value) {
     return value ? 1 : 0;
 }
 
+function getRegionLevelFullCode(region, level) {
+    try {
+        const data = typeof region === "string" ? JSON.parse(region) : region;
+        let current = data;
+
+        for (let i = 1; i <= level; i++) {
+            current = current?.[`level${i}`];
+            if (!current) {
+                return null;
+            }
+        }
+
+        return current.fullCode || null;
+    } catch (error) {
+        return null;
+    }
+}
+
 function assignmentRow(data) {
     return {
         id: data.id,
@@ -104,6 +122,12 @@ function assignmentRow(data) {
         assignmentResponsibility: toJson(data.assignmentResponsibility, null),
         assignmentResponsibilityAdmin: toJson(data.assignmentResponsibilityAdmin, null),
         region: toJson(data.region, null),
+        level_1_fullcode: getRegionLevelFullCode(data.region, 1),
+        level_2_fullcode: getRegionLevelFullCode(data.region, 2),
+        level_3_fullcode: getRegionLevelFullCode(data.region, 3),
+        level_4_fullcode: getRegionLevelFullCode(data.region, 4),
+        level_5_fullcode: getRegionLevelFullCode(data.region, 5),
+        level_6_fullcode: getRegionLevelFullCode(data.region, 6),
         regionMetadata: toJson(data.regionMetadata, null),
         sampleType: data.sampleType ?? null,
         isTarget: toUInt8(data.isTarget),
@@ -193,6 +217,12 @@ async function initializeClickHouse() {
             assignmentResponsibility Nullable(String),
             assignmentResponsibilityAdmin Nullable(String),
             region Nullable(String),
+            level_1_fullcode Nullable(String),
+            level_2_fullcode Nullable(String),
+            level_3_fullcode Nullable(String),
+            level_4_fullcode Nullable(String),
+            level_5_fullcode Nullable(String),
+            level_6_fullcode Nullable(String),
             regionMetadata Nullable(String),
             sampleType Nullable(Int32),
             isTarget Nullable(UInt8),
@@ -205,6 +235,15 @@ async function initializeClickHouse() {
         ORDER BY id
     `
     });
+
+    for (let i = 1; i <= 6; i++) {
+        await clickhouse.command({
+            query: `
+            ALTER TABLE ${ASSIGNMENT_TABLE_NAME}
+            ADD COLUMN IF NOT EXISTS level_${i}_fullcode Nullable(String) AFTER region
+        `
+        });
+    }
 
     await clickhouse.command({
         query: `
@@ -472,7 +511,7 @@ async function crawl() {
             inserted_at: toDateTime(new Date())
         }]);
     }
-    await optimizeTable(ASSIGNMENT_TABLE_NAME);
+    // await optimizeTable(ASSIGNMENT_TABLE_NAME);
     // await optimizeTable("last_data");
     // update last_data
     if (fs.existsSync('index_main.txt')) {
@@ -481,12 +520,12 @@ async function crawl() {
     await browser.close();
 }
 
-crawl()
+//crawl()
 
-//const cron = require("node-cron");
+const cron = require("node-cron");
 
-//cron.schedule("40 4,10,16 * * *", () => {
-//    const now = new Date();
-//    console.log(`Cron job triggered at ${now.toLocaleString()}`);
-//    crawl();
-//});
+cron.schedule("0 10,16 * * *", () => {
+    const now = new Date();
+    console.log(`Cron job triggered at ${now.toLocaleString()}`);
+    crawl();
+});
