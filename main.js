@@ -561,7 +561,7 @@ async function crawl() {
 
 const cron = require("node-cron");
 
-cron.schedule("40 10,16 * * *", () => {
+cron.schedule("30 11,16 * * *", () => {
     const now = new Date();
     console.log(`Cron job triggered at ${now.toLocaleString()}`);
     crawl();
