@@ -12,6 +12,8 @@ const PAGE_TIMEOUT = parseInt(process.env.PAGE_TIMEOUT || "600000", 10);
 const FETCH_TIMEOUT = parseInt(process.env.FETCH_TIMEOUT || "600000", 10);
 const MAX_DOWNLOAD_RETRY = parseInt(process.env.MAX_DOWNLOAD_RETRY || "3", 10);
 const ASSIGNMENT_TABLE_NAME = getTableNameFromEnv("ASSIGNMENT_TABLE_NAME", "assignments");
+const SURVEY_TABLE_NAME = getTableNameFromEnv("SURVEY_TABLE_NAME", "surveys");
+const REGION_GROUP_TABLE_NAME = getTableNameFromEnv("REGION_GROUP_TABLE_NAME", "region_groups");
 
 const clickhouse = createClient({
     url: `http://${process.env.CLICKHOUSE_HOST || "localhost"}:${process.env.CLICKHOUSE_PORT || "8123"}`,
@@ -336,21 +338,21 @@ async function crawl() {
 
     const regionRows = await queryJsonEachRow(`
         SELECT *
-        FROM region_groups FINAL
+        FROM ${REGION_GROUP_TABLE_NAME} FINAL
         LIMIT 1
     `);
     const surveyRows = await queryJsonEachRow(`
         SELECT *
-        FROM surveys FINAL
+        FROM ${SURVEY_TABLE_NAME} FINAL
         LIMIT 1
     `);
 
     if (regionRows.length === 0) {
-        throw new Error("Data region_groups belum ada di ClickHouse. Jalankan master_wilayah.js dulu.");
+        throw new Error(`Data ${REGION_GROUP_TABLE_NAME} belum ada di ClickHouse. Jalankan master_wilayah.js dulu.`);
     }
 
     if (surveyRows.length === 0) {
-        throw new Error("Data surveys belum ada di ClickHouse. Jalankan master_wilayah.js dulu.");
+        throw new Error(`Data ${SURVEY_TABLE_NAME} belum ada di ClickHouse. Jalankan master_wilayah.js dulu.`);
     }
 
     const survey = surveyRows[0];
