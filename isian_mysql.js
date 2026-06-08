@@ -1,7 +1,9 @@
 const puppeteer = require("puppeteer");
-const { createClient } = require("@clickhouse/client");
+const Last = require("./models/Last");
+const sequelize = require("./database");
 const fs = require('fs');
 const path = require('path');
+const AssignmentContent = require("./models/assignmentContent");
 
 
 require("dotenv").config();
@@ -11,124 +13,6 @@ const ASSIGNMENT_CONTENT_URL = "https://fasih-sm.bps.go.id/assignment-general/ap
 const PAGE_TIMEOUT = parseInt(process.env.PAGE_TIMEOUT || "600000", 10);
 const FETCH_TIMEOUT = parseInt(process.env.FETCH_TIMEOUT || "600000", 10);
 const MAX_DOWNLOAD_RETRY = parseInt(process.env.MAX_DOWNLOAD_RETRY || "3", 10);
-const ASSIGNMENT_TABLE_NAME = getTableNameFromEnv("ASSIGNMENT_TABLE_NAME", "assignments");
-const ASSIGNMENT_CONTENT_TABLE_NAME = getTableNameFromEnv("ASSIGNMENT_CONTENT_TABLE_NAME", "assignment_content");
-
-const clickhouse = createClient({
-    url: `http://${process.env.CLICKHOUSE_HOST || "localhost"}:${process.env.CLICKHOUSE_PORT || "8123"}`,
-    database: process.env.CLICKHOUSE_DB || "analytics",
-    username: process.env.CLICKHOUSE_USER || "analyst",
-    password: process.env.CLICKHOUSE_PASSWORD || "analyst_password"
-});
-
-function getTableNameFromEnv(envName, defaultValue) {
-    const tableName = process.env[envName] || defaultValue;
-
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
-        throw new Error(`${envName} hanya boleh berisi huruf, angka, dan underscore, serta tidak boleh diawali angka.`);
-    }
-
-    return tableName;
-}
-
-function toDateTime(value) {
-    if (!value) {
-        return null;
-    }
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return null;
-    }
-
-    return date.toISOString().slice(0, 19).replace("T", " ");
-}
-
-function toJson(value, defaultValue) {
-    if (value === undefined || value === null) {
-        return JSON.stringify(defaultValue);
-    }
-
-    return typeof value === "string" ? value : JSON.stringify(value);
-}
-
-function assignmentContentRow(data) {
-    return {
-        id: data.id,
-        pre_defined_data: toJson(data.pre_defined_data, null),
-        answer: toJson(data.answer, null),
-        inserted_at: toDateTime(new Date())
-    };
-}
-
-function uniqueById(rows) {
-    const map = new Map();
-
-    for (const row of rows) {
-        if (row.id) {
-            map.set(row.id, row);
-        }
-    }
-
-    return Array.from(map.values());
-}
-
-async function insertJsonEachRow(tableName, rows) {
-    if (!Array.isArray(rows) || rows.length === 0) {
-        return;
-    }
-
-    await clickhouse.insert({
-        table: tableName,
-        values: uniqueById(rows),
-        format: "JSONEachRow"
-    });
-}
-
-async function queryJsonEachRow(query) {
-    const result = await clickhouse.query({
-        query,
-        format: "JSONEachRow"
-    });
-
-    return await result.json();
-}
-
-async function initializeClickHouse() {
-    await clickhouse.command({
-        query: `
-        CREATE TABLE IF NOT EXISTS last_data
-        (
-            id String,
-            dateModified Nullable(DateTime),
-            inserted_at DateTime
-        )
-        ENGINE = ReplacingMergeTree(inserted_at)
-        ORDER BY id
-    `
-    });
-
-    await clickhouse.command({
-        query: `
-        CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_CONTENT_TABLE_NAME}
-        (
-            id String,
-            pre_defined_data Nullable(String),
-            answer Nullable(String),
-            inserted_at DateTime
-        )
-        ENGINE = ReplacingMergeTree(inserted_at)
-        ORDER BY id
-    `
-    });
-}
-
-async function optimizeTable(tableName) {
-    console.log(`Optimize ${tableName}`);
-    await clickhouse.command({
-        query: `OPTIMIZE TABLE ${tableName} FINAL`
-    });
-}
 
 async function login(page) {
     console.log("Login ke Fasih SM");
@@ -226,8 +110,9 @@ async function downloadAssignmentContentWithRetry(page, task) {
 }
 
 async function crawl() {
-    await initializeClickHouse();
-    console.log("ClickHouse connected");
+    await sequelize.authenticate();
+    console.log("Database connected");
+    await sequelize.sync();
 
     const browser = await puppeteer.launch({ headless: false });
     const page = await browser.newPage();
@@ -241,19 +126,11 @@ async function crawl() {
         path.join(__dirname, 'assignment.sql'),
         'utf-8'
     );
-    sql = sql.replace(/\bfrom\s+assignments\b/i, `from ${ASSIGNMENT_TABLE_NAME} FINAL`);
 
     if (!process.env.ISIAN_ALL) {
-        const lastRows = await queryJsonEachRow(`
-            SELECT dateModified
-            FROM last_data FINAL
-            ORDER BY dateModified DESC
-            LIMIT 1
-        `);
-
-        if (lastRows.length > 0 && lastRows[0].dateModified) {
-            sql = `${sql} and dateModified > '${lastRows[0].dateModified}'`
-        }
+        const last_data = await Last.findOne();
+        const date = new Date(last_data.dateModified).toISOString();
+        sql = `${sql} and dateModified > '${date}'`
     }
 
     let offset = 0;
@@ -274,7 +151,7 @@ async function crawl() {
     sql = sql + ` ORDER BY id LIMIT 999999999 OFFSET ${offset}`;
 
     // 🔥 ambil tasks
-    const tasks = await queryJsonEachRow(sql);
+    const [tasks] = await sequelize.query(sql);
 
     const cliProgress = require('cli-progress');
 
@@ -290,19 +167,22 @@ async function crawl() {
         data['id'] = result.data._id
         data['pre_defined_data'] = JSON.parse(result.data.pre_defined_data)['predata']
         data['answer'] = JSON.parse(result.data.data)['answers']
-        await insertJsonEachRow(ASSIGNMENT_CONTENT_TABLE_NAME, [assignmentContentRow(data)]);
+        const updateFields = Object.keys(AssignmentContent.rawAttributes)
+            .filter(field => field !== 'id'); // exclude primary key
+
+        await AssignmentContent.bulkCreate([data], {
+            updateOnDuplicate: updateFields
+        });
         bar.increment();
         fs.writeFileSync('index_asg.txt', (offset + bar.value).toString());
     }
     bar.stop();
     console.log("Selesai download semua level");
-    await optimizeTable(ASSIGNMENT_CONTENT_TABLE_NAME);
     // update last_data
     if (fs.existsSync('index_asg.txt')) {
         fs.unlinkSync('index_asg.txt');
     }
     await browser.close();
-    await clickhouse.close();
 }
 
 crawl();
