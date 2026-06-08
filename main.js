@@ -79,6 +79,24 @@ function getRegionLevelFullCode(region, level) {
     }
 }
 
+function getRegionLevelName(region, level) {
+    try {
+        const data = typeof region === "string" ? JSON.parse(region) : region;
+        let current = data;
+
+        for (let i = 1; i <= level; i++) {
+            current = current?.[`level${i}`];
+            if (!current) {
+                return null;
+            }
+        }
+
+        return current.name || null;
+    } catch (error) {
+        return null;
+    }
+}
+
 function assignmentRow(data) {
     return {
         id: data.id,
@@ -128,6 +146,12 @@ function assignmentRow(data) {
         level_4_fullcode: getRegionLevelFullCode(data.region, 4),
         level_5_fullcode: getRegionLevelFullCode(data.region, 5),
         level_6_fullcode: getRegionLevelFullCode(data.region, 6),
+        level_1_name: getRegionLevelName(data.region, 1),
+        level_2_name: getRegionLevelName(data.region, 2),
+        level_3_name: getRegionLevelName(data.region, 3),
+        level_4_name: getRegionLevelName(data.region, 4),
+        level_5_name: getRegionLevelName(data.region, 5),
+        level_6_name: getRegionLevelName(data.region, 6),
         regionMetadata: toJson(data.regionMetadata, null),
         sampleType: data.sampleType ?? null,
         isTarget: toUInt8(data.isTarget),
@@ -223,6 +247,12 @@ async function initializeClickHouse() {
             level_4_fullcode Nullable(String),
             level_5_fullcode Nullable(String),
             level_6_fullcode Nullable(String),
+            level_1_name Nullable(String),
+            level_2_name Nullable(String),
+            level_3_name Nullable(String),
+            level_4_name Nullable(String),
+            level_5_name Nullable(String),
+            level_6_name Nullable(String),
             regionMetadata Nullable(String),
             sampleType Nullable(Int32),
             isTarget Nullable(UInt8),
@@ -241,6 +271,13 @@ async function initializeClickHouse() {
             query: `
             ALTER TABLE ${ASSIGNMENT_TABLE_NAME}
             ADD COLUMN IF NOT EXISTS level_${i}_fullcode Nullable(String) AFTER region
+        `
+        });
+
+        await clickhouse.command({
+            query: `
+            ALTER TABLE ${ASSIGNMENT_TABLE_NAME}
+            ADD COLUMN IF NOT EXISTS level_${i}_name Nullable(String) AFTER level_${i}_fullcode
         `
         });
     }
@@ -524,7 +561,7 @@ async function crawl() {
 
 const cron = require("node-cron");
 
-cron.schedule("0 10,16 * * *", () => {
+cron.schedule("40 10,16 * * *", () => {
     const now = new Date();
     console.log(`Cron job triggered at ${now.toLocaleString()}`);
     crawl();
