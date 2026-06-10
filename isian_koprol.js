@@ -13,6 +13,7 @@ const FETCH_TIMEOUT = parseInt(process.env.FETCH_TIMEOUT || "600000", 10);
 const MAX_DOWNLOAD_RETRY = parseInt(process.env.MAX_DOWNLOAD_RETRY || "3", 10);
 const ASSIGNMENT_TABLE_NAME = getTableNameFromEnv("ASSIGNMENT_TABLE_NAME", "assignments");
 const ASSIGNMENT_CONTENT_TABLE_NAME = getTableNameFromEnv("ASSIGNMENT_CONTENT_TABLE_NAME", "assignment_content");
+const DOWNLOAD_RETRY_SLEEP_MS = 10 * 1000;
 const USERS_FILE = path.join(__dirname, "users.txt");
 
 const clickhouse = createClient({
@@ -70,6 +71,10 @@ function getActiveUser() {
     return loginUsers[activeUserIndex];
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function rotateUser() {
     activeUserIndex = (activeUserIndex + 1) % loginUsers.length;
     return getActiveUser();
@@ -99,6 +104,7 @@ function toJson(value, defaultValue) {
 function assignmentContentRow(data) {
     return {
         id: data.id,
+        dateModified: toDateTime(data.dateModified),
         pre_defined_data: toJson(data.pre_defined_data, null),
         answer: toJson(data.answer, null),
         inserted_at: toDateTime(new Date())
@@ -157,12 +163,20 @@ async function initializeClickHouse() {
         CREATE TABLE IF NOT EXISTS ${ASSIGNMENT_CONTENT_TABLE_NAME}
         (
             id String,
+            dateModified Nullable(DateTime),
             pre_defined_data Nullable(String),
             answer Nullable(String),
             inserted_at DateTime
         )
         ENGINE = ReplacingMergeTree(inserted_at)
         ORDER BY id
+    `
+    });
+
+    await clickhouse.command({
+        query: `
+        ALTER TABLE ${ASSIGNMENT_CONTENT_TABLE_NAME}
+        ADD COLUMN IF NOT EXISTS dateModified Nullable(DateTime) AFTER id
     `
     });
 }
@@ -220,6 +234,15 @@ async function login(page, options = {}) {
     ]);
 }
 
+async function createBrowserSession() {
+    const browser = await puppeteer.launch({ headless: false });
+    const page = await browser.newPage();
+    page.setDefaultTimeout(PAGE_TIMEOUT);
+    page.setDefaultNavigationTimeout(PAGE_TIMEOUT);
+
+    return { browser, page };
+}
+
 async function getXsrfToken(page) {
     const cookies = await page.cookies();
     const xsrfCookie = cookies.find(c => c.name === "XSRF-TOKEN");
@@ -263,12 +286,13 @@ async function downloadAssignmentContent(page, task, xsrfToken) {
     }, { url: ASSIGNMENT_CONTENT_URL, xsrfToken, taskId: task.id, timeout: FETCH_TIMEOUT });
 }
 
-async function downloadAssignmentContentWithRetry(page, task) {
+async function downloadAssignmentContentWithRetry(session, task) {
     let lastError;
     const maxDownloadAttempt = Math.max(MAX_DOWNLOAD_RETRY, loginUsers.length);
 
     for (let attempt = 1; attempt <= maxDownloadAttempt; attempt++) {
         try {
+            const page = session.page;
             const xsrfToken = await getXsrfToken(page);
             if (!xsrfToken) {
                 throw new Error("XSRF token tidak ditemukan");
@@ -286,8 +310,13 @@ async function downloadAssignmentContentWithRetry(page, task) {
 
             if (attempt < maxDownloadAttempt) {
                 const nextUser = rotateUser();
-                console.log(`Login ulang memakai akun ${nextUser.username} sebelum mengulang unduh isian`);
-                await login(page, { force: true });
+                console.log(`Menutup browser dan menunggu 10 detik sebelum login ulang memakai akun ${nextUser.username}`);
+                await session.browser.close().catch(() => {});
+                await sleep(DOWNLOAD_RETRY_SLEEP_MS);
+                const newSession = await createBrowserSession();
+                session.browser = newSession.browser;
+                session.page = newSession.page;
+                await login(session.page);
             }
         }
     }
@@ -299,13 +328,10 @@ async function crawl() {
     await initializeClickHouse();
     console.log("ClickHouse connected");
 
-    const browser = await puppeteer.launch({ headless: false });
-    const page = await browser.newPage();
-    page.setDefaultTimeout(PAGE_TIMEOUT);
-    page.setDefaultNavigationTimeout(PAGE_TIMEOUT);
+    const session = await createBrowserSession();
 
     // 🔐 LOGIN
-    await login(page);
+    await login(session.page);
 
     let sql = fs.readFileSync(
         path.join(__dirname, 'assignment.sql'),
@@ -355,9 +381,10 @@ async function crawl() {
 
 
     for (const task of tasks) {
-        const result = await downloadAssignmentContentWithRetry(page, task);
+        const result = await downloadAssignmentContentWithRetry(session, task);
         let data = {}
         data['id'] = result.data._id
+        data['dateModified'] = task.dateModified
         data['pre_defined_data'] = JSON.parse(result.data.pre_defined_data)['predata']
         data['answer'] = JSON.parse(result.data.data)['answers']
         await insertJsonEachRow(ASSIGNMENT_CONTENT_TABLE_NAME, [assignmentContentRow(data)]);
@@ -371,7 +398,7 @@ async function crawl() {
     if (fs.existsSync('index_asg.txt')) {
         fs.unlinkSync('index_asg.txt');
     }
-    await browser.close();
+    await session.browser.close();
     await clickhouse.close();
 }
 
